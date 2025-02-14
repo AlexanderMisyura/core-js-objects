@@ -351,35 +351,220 @@ function group(array, keySelector, valueSelector) {
  *  For more examples see unit tests.
  */
 
-const cssSelectorBuilder = {
-  element(/* value */) {
-    throw new Error('Not implemented');
-  },
+/**
+ * @typedef {{
+ *  combinator: '' | ' ' | '+' | '~' | '>',
+ *  element: string | '',
+ *  id: string | '',
+ *  class: string[],
+ *  attr: string[],
+ *  pseudoClass: string[],
+ *  pseudoElement: string | '',
+ *  next: Selector | '',
+ * }} Selector
+ */
 
-  id(/* value */) {
-    throw new Error('Not implemented');
-  },
+class CssSelectorBuilder {
+  /** @type {Selector} */
+  currentSelector = {
+    combinator: '',
+    element: '',
+    id: '',
+    class: [],
+    attr: [],
+    pseudoClass: [],
+    pseudoElement: '',
+    next: '',
+  };
 
-  class(/* value */) {
-    throw new Error('Not implemented');
-  },
+  /** @type {(builder1: CssSelectorBuilder, combinator: string, builder2: CssSelectorBuilder) => CssSelectorBuilder} */
+  combine;
 
-  attr(/* value */) {
-    throw new Error('Not implemented');
-  },
+  constructor() {
+    this.combine = function combine(builder1, combinator, builder2) {
+      const newBuilder = new CssSelectorBuilder();
+      newBuilder.currentSelector = builder1.currentSelector;
+      newBuilder.currentSelector.next = builder2.currentSelector;
+      newBuilder.currentSelector.next.combinator = ` ${combinator} `;
+      return newBuilder;
+    };
+  }
 
-  pseudoClass(/* value */) {
-    throw new Error('Not implemented');
-  },
+  /**
+   * Checks if the selector  that is being added
+   * duplicates an existing selector, which can only be one.
+   * @param {'element' | 'id' | 'pseudoElement'} selectorName
+   * @returns {void}
+   * @private
+   */
+  checkSingleSelectorRepeated(selectorName) {
+    if (this.currentSelector[selectorName]) {
+      throw new Error(
+        'Element, id and pseudo-element should not occur more then one time inside the selector'
+      );
+    }
+  }
 
-  pseudoElement(/* value */) {
-    throw new Error('Not implemented');
-  },
+  /**
+   * Checks if the selector that is being added violates the order of the selectors.
+   * @param { 'element' |
+   *               'id' |
+   *            'class' |
+   *             'attr' |
+   *      'pseudoClass' |
+   *    'pseudoElement' } selectorName
+   * @returns {void}
+   */
+  checkSelectorsOrder(selectorName) {
+    const baseOrder = [
+      'element',
+      'id',
+      'class',
+      'attr',
+      'pseudoClass',
+      'pseudoElement',
+    ];
 
-  combine(/* selector1, combinator, selector2 */) {
-    throw new Error('Not implemented');
-  },
-};
+    const currentOrder = baseOrder.slice(baseOrder.indexOf(selectorName) + 1);
+
+    const isOrderBroken = currentOrder.some(
+      (item) => this.currentSelector[item].length > 0
+    );
+
+    if (isOrderBroken) {
+      throw new Error(
+        'Selector parts should be arranged in the following order: element, id, class, attribute, pseudo-class, pseudo-element'
+      );
+    }
+  }
+
+  /**
+   * Description
+   * @param {CssSelectorBuilder} builderCopyTo
+   * @param {CssSelectorBuilder} builderCopyFrom
+   * @returns {any}
+   */
+  copySelectors(builderCopyTo, builderCopyFrom = this) {
+    const currentBuilder = builderCopyTo;
+
+    currentBuilder.currentSelector = {
+      combinator: builderCopyFrom.currentSelector.combinator,
+      element: builderCopyFrom.currentSelector.element,
+      id: builderCopyFrom.currentSelector.id,
+      class: [...builderCopyFrom.currentSelector.class],
+      attr: [...builderCopyFrom.currentSelector.attr],
+      pseudoClass: [...builderCopyFrom.currentSelector.pseudoClass],
+      pseudoElement: builderCopyFrom.currentSelector.pseudoElement,
+      next: builderCopyFrom.currentSelector.next,
+    };
+  }
+
+  /** @param {string} elName */
+  element(elName) {
+    this.checkSingleSelectorRepeated('element');
+    this.checkSelectorsOrder('element');
+
+    const builder = new CssSelectorBuilder();
+    this.copySelectors(builder);
+    builder.currentSelector.element = elName;
+
+    return builder;
+  }
+
+  /** @param {string} idName */
+  id(idName) {
+    this.checkSingleSelectorRepeated('id');
+    this.checkSelectorsOrder('id');
+
+    const builder = new CssSelectorBuilder();
+    this.copySelectors(builder);
+    builder.currentSelector.id = `#${idName}`;
+
+    return builder;
+  }
+
+  /** @param {string} className */
+  class(className) {
+    this.checkSelectorsOrder('class');
+
+    const builder = new CssSelectorBuilder();
+    this.copySelectors(builder);
+    builder.currentSelector.class.push(`.${className}`);
+
+    return builder;
+  }
+
+  /** @param {string} attrName */
+  attr(attrName) {
+    this.checkSelectorsOrder('attr');
+
+    const builder = new CssSelectorBuilder();
+    this.copySelectors(builder);
+    builder.currentSelector.attr.push(`[${attrName}]`);
+
+    return builder;
+  }
+
+  /** @param {string} pseudoClassName */
+  pseudoClass(pseudoClassName) {
+    this.checkSelectorsOrder('pseudoClass');
+
+    const builder = new CssSelectorBuilder();
+    this.copySelectors(builder);
+    builder.currentSelector.pseudoClass.push(`:${pseudoClassName}`);
+
+    return builder;
+  }
+
+  /** @param {string} pseudoElementName */
+  pseudoElement(pseudoElementName) {
+    this.checkSingleSelectorRepeated('pseudoElement');
+
+    const builder = new CssSelectorBuilder();
+    this.copySelectors(builder);
+    builder.currentSelector.pseudoElement = `::${pseudoElementName}`;
+
+    return builder;
+  }
+
+  /**
+   * @param {' ' | ' + ' | ' ~ ' | ' > '} combinator
+   * @returns {void}
+   */
+  addCombinator(combinator) {
+    if (this.selectorsCombination.length > 0) {
+      this.selectorsCombination[0].combinator = combinator;
+    } else {
+      this.currentSelector.combinator = combinator;
+    }
+  }
+
+  /**
+   * @param {CssSelectorBuilder} builder1
+   * @param {' ' | ' + ' | ' ~ ' | ' > '} combinator
+   * @param {CssSelectorBuilder} builder2
+   * @returns {any}
+   */
+
+  /**
+   * @param {Selector} selector
+   * @returns {string}
+   */
+  stringify(selector = this.currentSelector) {
+    const result = `${selector.combinator}${selector.element}${
+      selector.id
+    }${selector.class.join('')}${selector.attr.join(
+      ''
+    )}${selector.pseudoClass.join('')}${selector.pseudoElement}`;
+    if (selector.next) {
+      return result + this.stringify(selector.next);
+    }
+
+    return result;
+  }
+}
+
+const cssSelectorBuilder = new CssSelectorBuilder();
 
 module.exports = {
   shallowCopy,
